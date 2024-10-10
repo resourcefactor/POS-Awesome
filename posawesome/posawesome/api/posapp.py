@@ -15,7 +15,6 @@ from erpnext.accounts.party import get_party_bank_account
 from erpnext.stock.doctype.batch.batch import (
     get_batch_no,
     get_batch_qty,
-    set_batch_nos,
 )
 from erpnext.accounts.doctype.payment_request.payment_request import (
     get_dummy_message,
@@ -149,6 +148,7 @@ def get_items(
         posa_show_template_items = pos_profile.get("posa_show_template_items")
         warehouse = pos_profile.get("warehouse")
         use_limit_search = pos_profile.get("pose_use_limit_search")
+        selling_price_list = pos_profile.get("selling_price_list")
         search_limit = 0
 
         if not price_list:
@@ -188,32 +188,34 @@ def get_items(
         items_data = frappe.db.sql(
             """
             SELECT
-                name AS item_code,
-                item_name,
-                description,
-                stock_uom,
-                image,
-                is_stock_item,
-                has_variants,
-                variant_of,
-                item_group,
-                idx as idx,
-                has_batch_no,
-                has_serial_no,
-                max_discount,
-                brand
+                itm.name AS item_code,
+                itm.item_name,
+                itm.description,
+                itm.stock_uom,
+                itm.image,
+                itm.is_stock_item,
+                itm.has_variants,
+                itm.variant_of,
+                itm.item_group,
+                itm.idx as idx,
+                itm.has_batch_no,
+                itm.has_serial_no,
+                itm.max_discount,
+                itm.brand
             FROM
-                `tabItem`
+                `tabItem` as itm
+            INNER JOIN
+                `tabItem Price` as itm_price ON itm_price.item_code = itm.name and itm_price.price_list = '{0}'
             WHERE
                 disabled = 0
                     AND is_sales_item = 1
                     AND is_fixed_asset = 0
-                    {condition}
+                    {1}
             ORDER BY
                 item_name asc
-            {limit}
+            {2}
                 """.format(
-                condition=condition, limit=limit
+                selling_price_list, condition, limit
             ),
             as_dict=1,
         )
@@ -622,7 +624,7 @@ def submit_invoice(invoice, data):
     if frappe.get_value("POS Profile", invoice_doc.pos_profile, "posa_auto_set_batch"):
         set_batch_nos(invoice_doc, "warehouse", throw=True)
     set_batch_nos_for_bundels(invoice_doc, "warehouse", throw=True)
-
+    invoice_doc.cost_center = frappe.get_value("POS Profile", invoice_doc.pos_profile, "cost_center")
     invoice_doc.flags.ignore_permissions = True
     frappe.flags.ignore_account_permission = True
     invoice_doc.posa_is_printed = 1
@@ -685,6 +687,23 @@ def set_batch_nos_for_bundels(doc, warehouse_field, throw=False):
                 d.batch_no = get_batch_no(
                     d.item_code, warehouse, qty, throw, d.serial_no
                 )
+            else:
+                batch_qty = get_batch_qty(batch_no=d.batch_no, warehouse=warehouse)
+                if flt(batch_qty, d.precision("qty")) < flt(qty, d.precision("qty")):
+                    frappe.throw(
+                        _(
+                            "Row #{0}: The batch {1} has only {2} qty. Please select another batch which has {3} qty available or split the row into multiple rows, to deliver/issue from multiple batches"
+                        ).format(d.idx, d.batch_no, batch_qty, qty)
+                    )
+
+def set_batch_nos(doc, warehouse_field, throw=False, child_table="items"):
+    """Automatically select `batch_no` for outgoing items in item table"""
+    for d in doc.get(child_table):
+        qty = d.get("stock_qty") or d.get("transfer_qty") or d.get("qty") or 0
+        warehouse = d.get(warehouse_field, None)
+        if warehouse and qty > 0 and frappe.db.get_value("Item", d.item_code, "has_batch_no"):
+            if not d.batch_no:
+                d.batch_no = get_batch_no(d.item_code, warehouse, qty, throw, d.serial_no)
             else:
                 batch_qty = get_batch_qty(batch_no=d.batch_no, warehouse=warehouse)
                 if flt(batch_qty, d.precision("qty")) < flt(qty, d.precision("qty")):
@@ -911,8 +930,11 @@ def get_items_details(pos_profile, items_data):
             for item in items_data:
                 item_code = item.get("item_code")
                 item_stock_qty = get_stock_availability(item_code, warehouse)
-                has_batch_no, has_serial_no = frappe.get_value(
-                    "Item", item_code, ["has_batch_no", "has_serial_no"]
+                has_batch_no = frappe.get_value(
+                    "Item", item_code, "has_batch_no"
+                )
+                has_serial_no = frappe.get_value(
+                    "Item", item_code, "has_serial_no"
                 )
 
                 uoms = frappe.get_all(
@@ -1390,8 +1412,8 @@ def build_item_cache(item_code):
 
     disabled_items = set([i.name for i in frappe.db.get_all("Item", {"disabled": 1})])
 
-    attribute_value_item_map = frappe._dict({})
-    item_attribute_value_map = frappe._dict({})
+    attribute_value_item_map = __dict({})
+    item_attribute_value_map = __dict({})
 
     item_variants_data = [r for r in item_variants_data if r[0] not in disabled_items]
     for row in item_variants_data:
@@ -1530,7 +1552,7 @@ def get_existing_payment_request(doc, pay):
 def make_payment_request(**args):
     """Make payment request"""
 
-    args = frappe._dict(args)
+    args = __dict(args)
 
     ref_doc = frappe.get_doc(args.dt, args.dn)
     gateway_account = get_payment_gateway_account(args.get("payment_gateway_account"))

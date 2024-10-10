@@ -19,7 +19,7 @@
             autofocus
             outlined
             color="primary"
-            :label="frappe._('Search Items')"
+            :label="__('Search Items')"
             hint="Search by item code, serial number, batch no or barcode"
             background-color="white"
             hide-details
@@ -34,7 +34,7 @@
             dense
             outlined
             color="primary"
-            :label="frappe._('QTY')"
+            :label="__('QTY')"
             background-color="white"
             hide-details
             v-model.number="qty"
@@ -87,7 +87,6 @@
                       {{ formtCurrency(item.rate) || 0 }}
                     </div>
                     <div class="text-caption golden--text">
-                      {{ formtFloat(item.actual_qty) || 0 }}
                       {{ item.stock_uom || "" }}
                     </div>
                   </v-card-text>
@@ -97,7 +96,6 @@
           </div>
           <div fluid class="items" v-if="items_view == 'list'">
             <div class="my-0 py-0 overflow-y-auto" style="max-height: 65vh">
-              <template>
                 <v-data-table
                   :headers="getItmesHeaders()"
                   :items="filtred_items"
@@ -105,7 +103,7 @@
                   class="elevation-1"
                   :items-per-page="itemsPerPage"
                   hide-default-footer
-                  @click:row="add_item"
+                  @click:row="add_item_table"
                 >
                   <template v-slot:item.rate="{ item }">
                     <span class="primary--text"
@@ -113,13 +111,7 @@
                       {{ formtCurrency(item.rate) }}</span
                     >
                   </template>
-                  <template v-slot:item.actual_qty="{ item }">
-                    <span class="golden--text">{{
-                      formtFloat(item.actual_qty)
-                    }}</span>
-                  </template>
                 </v-data-table>
-              </template>
             </div>
           </div>
         </v-col>
@@ -130,7 +122,7 @@
         <v-col cols="12">
           <v-select
             :items="items_group"
-            :label="frappe._('Items Group')"
+            :label="__('Items Group')"
             dense
             outlined
             hide-details
@@ -205,16 +197,16 @@ export default {
       this.get_items();
     },
     new_line() {
-      evntBus.$emit("set_new_line", this.new_line);
+      evntBus.emit("set_new_line", this.new_line);
     },
   },
 
   methods: {
     show_offers() {
-      evntBus.$emit("show_offers", "true");
+      evntBus.emit("show_offers", "true");
     },
     show_coupons() {
-      evntBus.$emit("show_coupons", "true");
+      evntBus.emit("show_coupons", "true");
     },
     get_items() {
       if (!this.pos_profile) {
@@ -238,7 +230,7 @@ export default {
         !vm.pos_profile.pose_use_limit_search
       ) {
         vm.items = JSON.parse(localStorage.getItem("items_storage"));
-        evntBus.$emit("set_all_items", vm.items);
+        evntBus.emit("set_all_items", vm.items);
         vm.loading = false;
       }
       frappe.call({
@@ -253,7 +245,7 @@ export default {
         callback: function (r) {
           if (r.message) {
             vm.items = r.message;
-            evntBus.$emit("set_all_items", vm.items);
+            evntBus.emit("set_all_items", vm.items);
             vm.loading = false;
             console.info("Items Loaded");
             if (
@@ -306,20 +298,19 @@ export default {
     getItmesHeaders() {
       const items_headers = [
         {
-          text: __("Name"),
+          title: __("Name"),
           align: "start",
           sortable: true,
-          value: "item_name",
+          key: "item_name",
         },
         {
-          text: __("Code"),
+          title: __("Code"),
           align: "start",
           sortable: true,
-          value: "item_code",
+          key: "item_code",
         },
-        { text: __("Rate"), value: "rate", align: "start" },
-        { text: __("Available QTY"), value: "actual_qty", align: "start" },
-        { text: __("UOM"), value: "stock_uom", align: "start" },
+        { title: __("Rate"), key: "rate", align: "start" },
+        { title: __("UOM"), key: "stock_uom", align: "start" },
       ];
       if (!this.pos_profile.posa_display_item_code) {
         items_headers.splice(1, 1);
@@ -327,15 +318,27 @@ export default {
 
       return items_headers;
     },
-    add_item(item) {
-      item = { ...item };
+    add_item_table(event, item){
+      item = { ...item.item };
       if (item.has_variants) {
-        evntBus.$emit("open_variants_model", item, this.items);
+        evntBus.emit("open_variants_model", item, this.items);
       } else {
         if (!item.qty || item.qty === 1) {
           item.qty = Math.abs(this.qty);
         }
-        evntBus.$emit("add_item", item);
+        evntBus.emit("add_item", item);
+        this.qty = 1;
+      }
+    },
+    add_item(item) {
+      item = { ...item };
+      if (item.has_variants) {
+        evntBus.emit("open_variants_model", item, this.items);
+      } else {
+        if (!item.qty || item.qty === 1) {
+          item.qty = Math.abs(this.qty);
+        }
+        evntBus.emit("add_item", item);
         this.qty = 1;
       }
     },
@@ -487,7 +490,7 @@ export default {
     },
     trigger_onscan(sCode) {
       if (this.filtred_items.length == 0) {
-        evntBus.$emit("show_mesage", {
+        evntBus.emit("show_mesage", {
           text: `No Item has this barcode "${sCode}"`,
           color: "error",
         });
@@ -642,7 +645,7 @@ export default {
 
   created: function () {
     this.$nextTick(function () {});
-    evntBus.$on("register_pos_profile", (data) => {
+    evntBus.on("register_pos_profile", (data) => {
       this.pos_profile = data.pos_profile;
       this.get_items();
       this.get_items_groups();
@@ -650,21 +653,21 @@ export default {
         ? "card"
         : "list";
     });
-    evntBus.$on("update_cur_items_details", () => {
+    evntBus.on("update_cur_items_details", () => {
       this.update_cur_items_details();
     });
-    evntBus.$on("update_offers_counters", (data) => {
+    evntBus.on("update_offers_counters", (data) => {
       this.offersCount = data.offersCount;
       this.appliedOffersCount = data.appliedOffersCount;
     });
-    evntBus.$on("update_coupons_counters", (data) => {
+    evntBus.on("update_coupons_counters", (data) => {
       this.couponsCount = data.couponsCount;
       this.appliedCouponsCount = data.appliedCouponsCount;
     });
-    evntBus.$on("update_customer_price_list", (data) => {
+    evntBus.on("update_customer_price_list", (data) => {
       this.customer_price_list = data;
     });
-    evntBus.$on("update_customer", (data) => {
+    evntBus.on("update_customer", (data) => {
       this.customer = data;
     });
   },
