@@ -2,7 +2,7 @@
   <div>
     <v-card
       class="selection mx-auto grey lighten-5 pa-1"
-      style="max-height: 76vh; height: 76vh"
+      style="max-height: 74vh; height: 74vh"
     >
       <v-progress-linear
         :active="loading"
@@ -71,7 +71,7 @@
           </v-col>
         </v-row>
         <v-divider></v-divider>
-
+        
         <div v-if="is_cashback">
           <v-row
             class="pyments px-1 py-0"
@@ -621,6 +621,19 @@
 
     <v-card flat class="cards mb-0 mt-3 py-0">
       <v-row align="start" no-gutters>
+        <v-col cols="12" class=" mt-2 mb-2">
+          <v-text-field
+            dense
+            variant="outlined"
+            color="primary"
+            :label="__('PAX')"
+            background-color="white"
+            hide-details
+            :model-value="formtFloat(pax_number)"
+            v-model="pax_number"
+            :rules="[isNumber]"
+          ></v-text-field>
+        </v-col>
         <v-col cols="6">
           <v-btn
             block
@@ -702,7 +715,10 @@ export default {
     loading: false,
     pos_profile: "",
     invoice_doc: "",
+    temp_invoice_data: "",
+    mode_of_payment: "",
     loyalty_amount: 0,
+    pax_number: 1,
     is_credit_sale: 0,
     is_write_off_change: 0,
     date_menu: false,
@@ -840,6 +856,22 @@ export default {
         frappe.utils.play_sound("error");
         return;
       }
+      if (isNaN(this.pax_number)) {
+        evntBus.emit("show_mesage", {
+          text: `Pax Should be numeric and greater than Zero`,
+          color: "error",
+        });
+        frappe.utils.play_sound("error");
+        return;
+      }
+      if (this.pax_number < 1) {
+        evntBus.emit("show_mesage", {
+          text: `Pax Should be greater than Zero`,
+          color: "error",
+        });
+        frappe.utils.play_sound("error");
+        return;
+      }
 
       this.submit_invoice(print);
       this.customer_credit_dict = [];
@@ -880,6 +912,8 @@ export default {
         args: {
           data: data,
           invoice: this.invoice_doc,
+          mode_of_payment: this.mode_of_payment,
+          pax_number: this.pax_number
         },
         async: true,
         callback: function (r) {
@@ -894,6 +928,7 @@ export default {
             });
             frappe.utils.play_sound("submit");
             this.addresses = [];
+            vm.pax_number =1;
           }
         },
       });
@@ -904,7 +939,35 @@ export default {
           payment.idx == idx
             ? this.invoice_doc.rounded_total || this.invoice_doc.grand_total
             : 0;
+          
+          if(payment.idx == idx){
+            this.credit_card_discount(payment);
+          }
       });
+    },
+    credit_card_discount(payment) {
+      let me = this;
+      me.mode_of_payment = payment.mode_of_payment;
+      if (payment.mode_of_payment == "Credit Card"){
+        frappe.call({
+            method: "posawesome.posawesome.api.posapp.credit_card_tax",
+            args: {
+                "pos_profile": this.pos_profile.name
+            },
+            callback: function(r) {
+              let discount_amt = me.invoice_doc.net_total * r.message / 100;
+              me.invoice_doc.total_taxes_and_charges += discount_amt;
+              payment.amount += discount_amt;
+              me.total_payments += discount_amt;
+              me.invoice_doc.grand_total += discount_amt;
+              me.invoice_doc.rounded_total += discount_amt;
+            }
+        });
+      }
+      else{
+        me.invoice_doc = Object.assign({}, me.temp_invoice_data); ;
+        payment.amount = me.temp_invoice_data.rounded_total;
+      }
     },
     set_rest_amount(idx) {
       this.invoice_doc.payments.forEach((payment) => {
@@ -1336,6 +1399,7 @@ export default {
   mounted: function () {
     this.$nextTick(function () {
       evntBus.on("send_invoice_doc_payment", (invoice_doc) => {
+        this.temp_invoice_data =  Object.assign({}, invoice_doc);
         this.invoice_doc = invoice_doc;
         const default_payment = this.invoice_doc.payments.find(
           (payment) => payment.default == 1

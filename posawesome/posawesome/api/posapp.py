@@ -554,11 +554,12 @@ def update_invoice(data):
 
 
 @frappe.whitelist()
-def submit_invoice(invoice, data):
+def submit_invoice(invoice, data, mode_of_payment=None, pax_number=None):
     data = json.loads(data)
     invoice = json.loads(invoice)
     invoice_doc = frappe.get_doc("Sales Invoice", invoice.get("name"))
     invoice_doc.update(invoice)
+    invoice_doc.pax = pax_number
     if invoice.get("posa_delivery_date"):
         invoice_doc.update_stock = 0
     mop_cash_list = [
@@ -566,6 +567,24 @@ def submit_invoice(invoice, data):
         for i in invoice_doc.payments
         if "cash" in i.mode_of_payment.lower() and i.type == "Cash"
     ]
+
+    if mode_of_payment == "Credit Card" and invoice_doc.pos_profile:
+        credit_tax = frappe.get_value("POS Profile", invoice_doc.pos_profile, "c_c_taxes_and_charges")
+        if credit_tax:
+            tax_doc = frappe.get_doc("Sales Taxes and Charges Template", credit_tax)
+            if not tax_doc.disabled:
+                for res in tax_doc.taxes:
+                    invoice_doc.append(
+                        "taxes",
+                        {
+                            "account_head": res.account_head,
+                            "charge_type": res.charge_type,
+                            "cost_center": res.cost_center,
+                            "description": res.description,
+                            "rate": res.rate
+                        }
+                    )
+
     if len(mop_cash_list) > 0:
         cash_account = get_bank_cash_account(mop_cash_list[0], invoice_doc.company)
     else:
@@ -1837,3 +1856,18 @@ def get_sales_invoice_child_table(sales_invoice, sales_invoice_item):
         "Sales Invoice Item", {"parent": parent_doc.name, "name": sales_invoice_item}
     )
     return child_doc
+
+
+@frappe.whitelist()
+def credit_card_tax(pos_profile):
+    rate_per = 0
+    if pos_profile:
+        pos_doc = frappe.get_doc("POS Profile", pos_profile)
+        if pos_doc.c_c_taxes_and_charges:
+            tax_doc = frappe.get_doc("Sales Taxes and Charges Template", pos_doc.c_c_taxes_and_charges)
+            for res in tax_doc.taxes:
+                rate_per += res.rate
+    
+    return rate_per
+
+    
