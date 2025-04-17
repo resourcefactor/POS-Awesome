@@ -755,6 +755,16 @@ export default {
         frappe.utils.play_sound("error");
         return;
       }
+
+      if (!this.sales_person) {
+        evntBus.emit("show_mesage", {
+          text: `Please select a Sales Person before submitting.`,
+          color: "error",
+        });
+        frappe.utils.play_sound("error");
+        return;
+      }
+
       // validate phone payment
       let phone_payment_is_valid = true;
       if (!payment_received) {
