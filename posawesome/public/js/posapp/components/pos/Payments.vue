@@ -756,7 +756,7 @@ export default {
         return;
       }
 
-      if (!this.sales_person) {
+      if (this.pos_profile.posa_sales_person_mandatory && !this.sales_person) {
         evntBus.emit("show_mesage", {
           text: `Please select a Sales Person before submitting.`,
           color: "error",
