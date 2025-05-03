@@ -901,22 +901,23 @@ def get_available_credit(customer, company):
 
 
 @frappe.whitelist()
-def get_draft_invoices(pos_opening_shift):
-    invoices_list = frappe.get_list(
-        "Sales Invoice",
-        filters={
-            "posa_pos_opening_shift": pos_opening_shift,
-            "docstatus": 0,
-            "posa_is_printed": 0,
-        },
-        fields=["name"],
-        limit_page_length=0,
-        order_by="modified desc",
-    )
-    data = []
-    for invoice in invoices_list:
-        data.append(frappe.get_cached_doc("Sales Invoice", invoice["name"]))
-    return data
+def get_draft_invoices(pos_opening_shift=None):
+    if pos_opening_shift:
+        invoices_list = frappe.get_list(
+            "Sales Invoice",
+            filters={
+                "posa_pos_opening_shift": pos_opening_shift,
+                "docstatus": 0,
+                "posa_is_printed": 0,
+            },
+            fields=["name"],
+            limit_page_length=0,
+            order_by="modified desc",
+        )
+        data = []
+        for invoice in invoices_list:
+            data.append(frappe.get_cached_doc("Sales Invoice", invoice["name"]))
+        return data
 
 
 @frappe.whitelist()
@@ -1850,12 +1851,13 @@ def delete_sales_invoice(sales_invoice):
 
 
 @frappe.whitelist()
-def get_sales_invoice_child_table(sales_invoice, sales_invoice_item):
+def get_sales_invoice_child_table(sales_invoice, sales_invoice_item=None):
     parent_doc = frappe.get_doc("Sales Invoice", sales_invoice)
-    child_doc = frappe.get_doc(
-        "Sales Invoice Item", {"parent": parent_doc.name, "name": sales_invoice_item}
-    )
-    return child_doc
+    if sales_invoice and sales_invoice_item:
+        child_doc = frappe.get_doc(
+            "Sales Invoice Item", {"parent": parent_doc.name, "name": sales_invoice_item}
+        )
+        return child_doc
 
 
 @frappe.whitelist()
