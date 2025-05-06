@@ -61,7 +61,7 @@
           </template>
         </v-list-item>
       </template>
-      
+
       <template v-slot:no-data>
         <v-list-item class="no-results-item">
           <v-list-item-title>
@@ -70,29 +70,16 @@
           </v-list-item-title>
         </v-list-item>
       </template>
-      
+
       <template v-slot:progress>
-        <v-progress-linear
-          v-if="loading"
-          absolute
-          color="deep-purple-accent-2"
-          indeterminate
-          height="3"
-        ></v-progress-linear>
+        <v-progress-linear v-if="loading" absolute color="deep-purple-accent-2" indeterminate height="3" />
       </template>
-      
+
       <template v-slot:append-inner>
-        <v-icon
-          v-if="customer"
-          color="deep-purple-darken-2"
-          @click.stop="customer = null"
-          class="clear-btn"
-        >
-          mdi-close-circle
-        </v-icon>
+        <v-icon v-if="customer" color="deep-purple-darken-2" @click.stop="customer = null" class="clear-btn">mdi-close-circle</v-icon>
       </template>
     </v-autocomplete>
-    
+
     <div class="update-customer-container">
       <UpdateCustomer />
     </div>
@@ -121,11 +108,10 @@ export default {
   computed: {
     filteredCustomers() {
       if (!this.searchInput) return this.customers;
-      
       const searchText = this.searchInput.toLowerCase().trim();
-      
+
       return this.customers.filter(customer => {
-        const searchFields = [
+        const fields = [
           customer.customer_name?.toLowerCase() || '',
           customer.name?.toLowerCase() || '',
           customer.name?.replace('CUST-', '').toLowerCase() || '',
@@ -134,49 +120,41 @@ export default {
           customer.mobile_no?.toLowerCase() || '',
           this.formatAddress(customer)?.toLowerCase() || ''
         ];
-        
-        return searchFields.some(field => field.includes(searchText));
+        return fields.some(field => field.includes(searchText));
       });
     }
   },
 
   methods: {
     async get_customer_names() {
-      const vm = this;
       if (this.customers.length > 0 && !this.searchInput) return;
-      
+
       this.loading = true;
-      
+
       try {
-        // Try loading from cache first
-        if (vm.pos_profile.posa_local_storage && localStorage.customer_storage) {
+        if (this.pos_profile.posa_local_storage && localStorage.customer_storage) {
           try {
-            vm.customers = JSON.parse(localStorage.getItem('customer_storage'));
+            this.customers = JSON.parse(localStorage.getItem('customer_storage'));
           } catch (e) {
-            console.error('Error parsing cached customers:', e);
+            console.error('Failed to parse local customer storage:', e);
           }
         }
-        
-        // Fetch from server
-        await new Promise((resolve) => {
+
+        await new Promise(resolve => {
           frappe.call({
             method: 'posawesome.posawesome.api.posapp.get_customer_names',
             args: { pos_profile: this.pos_profile.pos_profile },
             callback: (r) => {
               if (r.message) {
-                vm.customers = r.message;
-                if (vm.pos_profile.posa_local_storage) {
-                  try {
-                    localStorage.setItem('customer_storage', JSON.stringify(r.message));
-                  } catch (e) {
-                    console.error('Error caching customers:', e);
-                  }
+                this.customers = r.message;
+                if (this.pos_profile.posa_local_storage) {
+                  localStorage.setItem('customer_storage', JSON.stringify(r.message));
                 }
               }
               resolve();
             },
             error: (err) => {
-              console.error('Error loading customers:', err);
+              console.error('Failed to fetch customer names:', err);
               resolve();
             }
           });
@@ -189,13 +167,13 @@ export default {
     new_customer() {
       evntBus.emit('open_update_customer', null);
     },
-    
+
     edit_customer() {
       if (this.customer) {
         evntBus.emit('open_update_customer', this.customer);
       }
     },
-    
+
     getCustomerSubtitle(customer) {
       return [
         customer.name && `ID: ${customer.name}`,
@@ -205,9 +183,8 @@ export default {
         customer.primary_address && `Address: ${this.formatAddress(customer)}`
       ].filter(Boolean).join('\n');
     },
-    
+
     formatAddress(customer) {
-      if (!customer.primary_address) return '';
       return [
         customer.primary_address,
         customer.city,
@@ -216,41 +193,60 @@ export default {
         customer.country
       ].filter(Boolean).join(', ');
     },
-    
+
     onCustomerSelect(customer) {
-      if (!customer) return;
-      this.customer_info = customer;
-      evntBus.emit('update_customer', customer.name);
+      if (customer && customer.name) {
+        this.customer_info = customer;
+        evntBus.emit('update_customer', customer.name);
+      }
+    }
+  },
+
+  watch: {
+    customer(newVal, oldVal) {
+      if (newVal && newVal.name && (!oldVal || newVal.name !== oldVal.name)) {
+        evntBus.emit('update_customer', newVal.name);
+      }
     }
   },
 
   created() {
-    const setupEventListeners = () => {
+    this.$nextTick(() => {
       evntBus.on('register_pos_profile', (pos_profile) => {
         this.pos_profile = pos_profile;
         this.get_customer_names();
       });
-      
-      // Other event listeners...
-      evntBus.on('set_customer', (customer) => {
-        this.customer = this.customers.find(c => c.name === customer) || customer;
-      });
-      
-      // Add all other event listeners similarly
-    };
-    
-    this.$nextTick(setupEventListeners);
-  },
 
-  beforeUnmount() {
-    // Clean up all event listeners
-    evntBus.off('register_pos_profile');
-    evntBus.off('payments_register_pos_profile');
-    evntBus.off('set_customer');
-    evntBus.off('add_customer_to_list');
-    evntBus.off('set_customer_readonly');
-    evntBus.off('set_customer_info_to_edit');
-    evntBus.off('fetch_customer_details');
+      evntBus.on('payments_register_pos_profile', (pos_profile) => {
+        this.pos_profile = pos_profile;
+        this.get_customer_names();
+      });
+
+      evntBus.on('set_customer', (customer_name) => {
+        const customer_obj = this.customers.find(c => c.name === customer_name);
+        if (customer_obj && (!this.customer || this.customer.name !== customer_obj.name)) {
+          this.customer = customer_obj;
+        } else if (!customer_obj) {
+          this.customer = { name: customer_name, customer_name: customer_name };
+        }
+      });
+
+      evntBus.on('add_customer_to_list', (customer) => {
+        this.customers.push(customer);
+      });
+
+      evntBus.on('set_customer_readonly', (value) => {
+        this.readonly = value;
+      });
+
+      evntBus.on('set_customer_info_to_edit', (data) => {
+        this.customer_info = data;
+      });
+
+      evntBus.on('fetch_customer_details', () => {
+        this.get_customer_names();
+      });
+    });
   }
 };
 </script>
