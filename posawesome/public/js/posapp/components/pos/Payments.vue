@@ -798,6 +798,7 @@ export default {
       }
     },
     proceedSubmit(payment_received = false, print = false) {
+      this.ensure_sales_person();
       if (!this.pos_profile.posa_allow_partial_payment &&
           this.total_payments <
             (this.invoice_doc.rounded_total || this.invoice_doc.grand_total)) {
@@ -1158,6 +1159,18 @@ export default {
       return (
         textOne.indexOf(searchText) > -1 || textTwo.indexOf(searchText) > -1
       );
+    },
+    ensure_sales_person() {
+      if (this.sales_person) {
+        this.invoice_doc.sales_team = [
+          {
+            sales_person: this.sales_person,
+            allocated_percentage: 100,
+          },
+        ];
+      } else {
+        this.invoice_doc.sales_team = [];
+      }
     },
     request_payment() {
       this.phone_dialog = false;
