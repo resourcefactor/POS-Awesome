@@ -765,35 +765,42 @@ export default {
         return;
       }
 
-      // validate phone payment
-      let phone_payment_is_valid = true;
-      if (!payment_received) {
-        this.invoice_doc.payments.forEach((payment) => {
-          if (
-            payment.type == "Phone" &&
-            ![0, "0", "", null, undefined].includes(payment.amount)
-          ) {
-            phone_payment_is_valid = false;
-          }
-        });
-        if (!phone_payment_is_valid) {
+      // NEW: Validate mode of payments confirmation
+      if (this.pos_profile.validate_mode_of_payments) {
+        // Determine the active payment methods
+        let selectedPayments = this.invoice_doc.payments.filter(p => p.amount > 0);
+        if (selectedPayments.length > 0) {
+          let paymentNames = selectedPayments.map(p => p.mode_of_payment).join(", ");
+
+          // Use frappe.confirm to prompt for confirmation
+          frappe.confirm(
+            `Are you sure you want to proceed with payment methods: ${paymentNames}?`,
+            () => {
+              // If confirmed, continue to normal submission flow
+              this.proceedSubmit(payment_received, print);
+            },
+            () => {
+              // If canceled, do nothing (abort submit)
+              frappe.utils.play_sound("error");
+            }
+          );
+        } else {
+          // No payment selected
           evntBus.emit("show_mesage", {
-            text: __(
-              "Please request phone payment or use other payment method"
-            ),
+            text: `No payment method selected`,
             color: "error",
           });
           frappe.utils.play_sound("error");
-          console.error("phone payment not requested");
-          return;
         }
+      } else {
+        // Proceed without confirmation if not validating
+        this.proceedSubmit(payment_received, print);
       }
-
-      if (
-        !this.pos_profile.posa_allow_partial_payment &&
-        this.total_payments <
-          (this.invoice_doc.rounded_total || this.invoice_doc.grand_total)
-      ) {
+    },
+    proceedSubmit(payment_received = false, print = false) {
+      if (!this.pos_profile.posa_allow_partial_payment &&
+          this.total_payments <
+            (this.invoice_doc.rounded_total || this.invoice_doc.grand_total)) {
         evntBus.emit("show_mesage", {
           text: `The amount paid is not complete`,
           color: "error",
@@ -802,11 +809,9 @@ export default {
         return;
       }
 
-      if (
-        this.pos_profile.posa_allow_partial_payment &&
-        !this.pos_profile.posa_allow_credit_sale &&
-        this.total_payments == 0
-      ) {
+      if (this.pos_profile.posa_allow_partial_payment &&
+          !this.pos_profile.posa_allow_credit_sale &&
+          this.total_payments == 0) {
         evntBus.emit("show_mesage", {
           text: `Please enter the amount paid`,
           color: "error",
@@ -816,7 +821,6 @@ export default {
       }
 
       if (!this.paid_change) this.paid_change = 0;
-
       if (this.paid_change > -this.diff_payment) {
         evntBus.emit("show_mesage", {
           text: `Paid change can not be greater than total change!`,
@@ -829,7 +833,6 @@ export default {
       let total_change = this.flt(
         this.flt(this.paid_change) + this.flt(-this.credit_change)
       );
-
       if (this.is_cashback && total_change != -this.diff_payment) {
         evntBus.emit("show_mesage", {
           text: `Error in change calculations!`,
@@ -844,7 +847,6 @@ export default {
           return flt(row.credit_to_redeem) > flt(row.total_credit);
         else return false;
       });
-
       if (credit_calc_check.length > 0) {
         evntBus.emit("show_mesage", {
           text: `redeamed credit can not greater than its total.`,
@@ -854,11 +856,9 @@ export default {
         return;
       }
 
-      if (
-        !this.invoice_doc.is_return &&
-        this.redeemed_customer_credit >
-          (this.invoice_doc.rounded_total || this.invoice_doc.grand_total)
-      ) {
+      if (!this.invoice_doc.is_return &&
+          this.redeemed_customer_credit >
+            (this.invoice_doc.rounded_total || this.invoice_doc.grand_total)) {
         evntBus.emit("show_mesage", {
           text: `can not redeam customer credit more than invoice total`,
           color: "error",
@@ -866,7 +866,8 @@ export default {
         frappe.utils.play_sound("error");
         return;
       }
-      if (isNaN(this.pax_number)) {
+
+      if (isNaN(this.pax_number) || this.pax_number < 1) {
         evntBus.emit("show_mesage", {
           text: `Pax Should be numeric and greater than Zero`,
           color: "error",
@@ -874,15 +875,8 @@ export default {
         frappe.utils.play_sound("error");
         return;
       }
-      if (this.pax_number < 1) {
-        evntBus.emit("show_mesage", {
-          text: `Pax Should be greater than Zero`,
-          color: "error",
-        });
-        frappe.utils.play_sound("error");
-        return;
-      }
 
+      // Submit invoice and cleanup
       this.submit_invoice(print);
       this.customer_credit_dict = [];
       this.redeem_customer_credit = false;
