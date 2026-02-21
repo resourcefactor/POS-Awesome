@@ -2075,13 +2075,13 @@ export default {
     shortOpenFirstItem(e) {
       if (e.key === "a" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        this.expanded = [];
-        this.expanded.push(this.items[0]);
+        if (!this.items[0]) return;
+        this.expanded = [this.items[0].posa_row_id];
       }
     },
 
     shortSelectDiscount(e) {
-      if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
+      if (e.key === "e" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         this.$refs.discount.focus();
       }
