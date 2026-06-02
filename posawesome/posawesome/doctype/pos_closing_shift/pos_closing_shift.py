@@ -156,10 +156,33 @@ def get_payments_entries(pos_opening_shift):
     )
 
 
+def _block_if_draft_invoices_exist(pos_opening_shift):
+    draft_invoices = frappe.get_all(
+        "Sales Invoice",
+        filters={
+            "posa_pos_opening_shift": pos_opening_shift,
+            "docstatus": 0,
+            "posa_is_printed": 0,
+        },
+        fields=["name"],
+        limit_page_length=0,
+    )
+    if draft_invoices:
+        names = ", ".join(d.name for d in draft_invoices)
+        frappe.throw(
+            _(
+                "Cannot close shift. Please submit or delete the following"
+                " draft invoice(s) first: {0}"
+            ).format(frappe.bold(names)),
+            title=_("Draft Invoices Exist"),
+        )
+
+
 @frappe.whitelist()
 def make_closing_shift_from_opening(opening_shift):
     opening_shift = json.loads(opening_shift)
     submit_printed_invoices(opening_shift.get("name"))
+    _block_if_draft_invoices_exist(opening_shift.get("name"))
     closing_shift = frappe.new_doc("POS Closing Shift")
     closing_shift.pos_opening_shift = opening_shift.get("name")
     closing_shift.period_start_date = opening_shift.get("period_start_date")
