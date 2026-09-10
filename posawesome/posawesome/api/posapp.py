@@ -568,7 +568,25 @@ def submit_invoice(invoice, data, mode_of_payment=None, pax_number=None):
         if "cash" in i.mode_of_payment.lower() and i.type == "Cash"
     ]
 
-    if mode_of_payment == "Credit Card" and invoice_doc.pos_profile:
+    is_credit_card_payment = False
+    if (
+        mode_of_payment
+        and invoice_doc.pos_profile
+        and frappe.get_meta("POS Payment Method").has_field("rfpos_is_credit_card")
+    ):
+        is_credit_card_payment = bool(
+            frappe.get_value(
+                "POS Payment Method",
+                {
+                    "parent": invoice_doc.pos_profile,
+                    "parenttype": "POS Profile",
+                    "mode_of_payment": mode_of_payment,
+                },
+                "rfpos_is_credit_card",
+            )
+        )
+
+    if is_credit_card_payment:
         credit_tax = frappe.get_value("POS Profile", invoice_doc.pos_profile, "c_c_taxes_and_charges")
         if credit_tax:
             tax_doc = frappe.get_doc("Sales Taxes and Charges Template", credit_tax)

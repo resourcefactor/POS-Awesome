@@ -953,7 +953,10 @@ export default {
     credit_card_discount(payment) {
       let me = this;
       me.mode_of_payment = payment.mode_of_payment;
-      if (payment.mode_of_payment == "Credit Card"){
+      const payment_method = (this.pos_profile.payments || []).find(
+        (row) => row.mode_of_payment == payment.mode_of_payment
+      );
+      if (payment_method && payment_method.rfpos_is_credit_card){
         frappe.call({
             method: "posawesome.posawesome.api.posapp.credit_card_tax",
             args: {
